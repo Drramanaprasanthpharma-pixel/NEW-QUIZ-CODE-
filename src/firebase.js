@@ -3,7 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Firebase reads these values from Vite's public environment variables.
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -12,6 +12,23 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+const requiredConfigKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+const missingConfigKeys = requiredConfigKeys.filter((key) => !firebaseConfig[key]);
+
+export let auth = null;
+export let db = null;
+export let firebaseError = null;
+
+if (missingConfigKeys.length === 0) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (error) {
+    firebaseError = error;
+    console.error('Firebase initialization failed.', error);
+  }
+} else {
+  firebaseError = new Error(`Missing Firebase environment variables: ${missingConfigKeys.join(', ')}`);
+  console.error(firebaseError.message);
+}
