@@ -3,23 +3,23 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Firebase reads these values from Vite's public environment variables.
-export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
+const requiredConfig = [
+  ['VITE_FIREBASE_API_KEY', 'apiKey', import.meta.env.VITE_FIREBASE_API_KEY],
+  ['VITE_FIREBASE_AUTH_DOMAIN', 'authDomain', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN],
+  ['VITE_FIREBASE_PROJECT_ID', 'projectId', import.meta.env.VITE_FIREBASE_PROJECT_ID],
+  ['VITE_FIREBASE_STORAGE_BUCKET', 'storageBucket', import.meta.env.VITE_FIREBASE_STORAGE_BUCKET],
+  ['VITE_FIREBASE_MESSAGING_SENDER_ID', 'messagingSenderId', import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID],
+  ['VITE_FIREBASE_APP_ID', 'appId', import.meta.env.VITE_FIREBASE_APP_ID],
+];
 
-const requiredConfigKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
-const missingConfigKeys = requiredConfigKeys.filter((key) => !firebaseConfig[key]);
+export const firebaseConfig = Object.fromEntries(requiredConfig.map(([, configKey, value]) => [configKey, value]));
+export const firebaseMissingVariables = requiredConfig.filter(([, configKey]) => !firebaseConfig[configKey]).map(([envName]) => envName);
 
 export let auth = null;
 export let db = null;
 export let firebaseError = null;
 
-if (missingConfigKeys.length === 0) {
+if (firebaseMissingVariables.length === 0) {
   try {
     const app = initializeApp(firebaseConfig);
     auth = getAuth(app);
@@ -29,6 +29,6 @@ if (missingConfigKeys.length === 0) {
     console.error('Firebase initialization failed.', error);
   }
 } else {
-  firebaseError = new Error(`Missing Firebase environment variables: ${missingConfigKeys.join(', ')}`);
+  firebaseError = new Error(`Missing Firebase environment variables: ${firebaseMissingVariables.join(', ')}`);
   console.error(firebaseError.message);
 }

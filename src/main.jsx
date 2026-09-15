@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { auth, db, firebaseError } from './firebase';
+import { auth, db, firebaseError, firebaseMissingVariables } from './firebase';
 import { createGame, finishGame, joinGame, listQuizzes, saveQuiz, showResults, startQuestion, subscribeToAnswers, subscribeToGame, subscribeToPlayers, subscribeToQuiz, submitAnswer } from './game';
 import { ArrowRight, Check, ChevronLeft, CircleUserRound, Copy, LogOut, Plus, Radio, Sparkles, Trophy, Users, X } from 'lucide-react';
 import './styles.css';
@@ -22,7 +22,7 @@ function App() {
   return <Home go={go} />;
 }
 
-function FirebaseUnavailable({ go }) { return <Shell go={go}><section className="auth-panel"><p className="kicker">SETUP REQUIRED</p><h1>Firebase is not connected.</h1><p>This deployment is missing its Firebase environment variables. The home page is available, but live rooms need Firebase configured in Vercel.</p></section></Shell>; }
+function FirebaseUnavailable({ go }) { const message = firebaseMissingVariables.length ? `Missing Firebase environment variables: ${firebaseMissingVariables.join(', ')}` : 'Firebase initialization failed. Check the browser console for the error code.'; return <Shell go={go}><section className="auth-panel"><p className="kicker">SETUP REQUIRED</p><h1>Firebase is not connected.</h1><p>{message} The home page is available, but live rooms need Firebase configured in Vercel.</p></section></Shell>; }
 function Shell({ children, go, eyebrow = 'PULSE QUIZ' }) { return <main className="shell"><header className="topbar"><button className="brand" onClick={() => go('/')}><span className="brand-mark"><Sparkles size={17} /></span>{eyebrow}</button><span className="live-dot">LIVE PLAY</span></header>{children}</main>; }
 function Home({ go }) { return <Shell go={go}><section className="home"><div className="home-copy"><p className="kicker">REAL-TIME TRIVIA / 01</p><h1>Make every answer<br /><em>count.</em></h1><p className="lead">A fast, friendly quiz room for curious teams. Join a live game or host your own in seconds.</p><div className="home-actions"><button className="primary" onClick={() => go('/play')}>Join a game <ArrowRight size={18} /></button><button className="secondary" onClick={() => go('/host')}>Host login</button></div></div><div className="home-art"><div className="art-ring ring-one" /><div className="art-ring ring-two" /><div className="score-card"><span>YOUR<br />SCORE</span><strong>+250</strong><small>ON FIRE</small></div><div className="float-card float-a"><Trophy size={18} /> 1st place</div><div className="float-card float-b"><Users size={18} /> 12 players</div></div></section><footer className="home-footer"><span>Built for bright minds</span><span>● &nbsp; Questions sync instantly</span></footer></Shell>; }
 
