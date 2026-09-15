@@ -11,9 +11,12 @@ export const subscribeToAnswers = (id, questionIndex, callback) => onSnapshot(qu
 export const listQuizzes = (hostId, callback) => onSnapshot(query(collection(db, 'quizzes'), where('hostId', '==', hostId)), (snap) => callback(snap.docs.map((item) => ({ id: item.id, ...item.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))));
 
 export async function saveQuiz(hostId, quiz, id) {
-  const payload = { title: quiz.title.trim(), hostId, questions: quiz.questions, createdAt: serverTimestamp() };
+  if (!db) throw new Error('Firestore is not initialized. Check the Vercel Firebase environment variables.');
+  if (!hostId) throw new Error('A signed-in host is required to save a quiz.');
+  const questions = quiz.questions.map((question) => ({ ...question, text: question.text.trim(), options: question.options.map((option) => option.trim()) }));
+  const payload = { title: quiz.title.trim(), hostId, questions, updatedAt: serverTimestamp() };
   if (id) { await updateDoc(doc(db, 'quizzes', id), payload); return id; }
-  return (await addDoc(collection(db, 'quizzes'), payload)).id;
+  return (await addDoc(collection(db, 'quizzes'), { ...payload, createdAt: serverTimestamp() })).id;
 }
 
 export async function createGame(hostId, quizId, gamePin) {
