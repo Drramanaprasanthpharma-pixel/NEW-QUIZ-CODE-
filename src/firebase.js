@@ -12,6 +12,17 @@ const requiredConfig = [
   ['VITE_FIREBASE_APP_ID', 'appId', import.meta.env.VITE_FIREBASE_APP_ID],
 ];
 
+const firebaseEnvironmentStatus = {
+  'Firebase API key present': Boolean(import.meta.env.VITE_FIREBASE_API_KEY),
+  'Firebase auth domain present': Boolean(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN),
+  'Firebase project ID present': Boolean(import.meta.env.VITE_FIREBASE_PROJECT_ID),
+  'Firebase storage bucket present': Boolean(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET),
+  'Firebase messaging sender ID present': Boolean(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+  'Firebase app ID present': Boolean(import.meta.env.VITE_FIREBASE_APP_ID),
+};
+
+Object.entries(firebaseEnvironmentStatus).forEach(([label, present]) => console.info(`${label}: ${present}`));
+
 export const firebaseConfig = Object.fromEntries(requiredConfig.map(([, configKey, value]) => [configKey, value]));
 export const firebaseMissingVariables = requiredConfig.filter(([, configKey]) => !firebaseConfig[configKey]).map(([envName]) => envName);
 
