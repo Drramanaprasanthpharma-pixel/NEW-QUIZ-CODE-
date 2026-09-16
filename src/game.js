@@ -28,7 +28,26 @@ export async function saveQuiz(hostId, quiz, id) {
 }
 
 export async function createGame(hostId, quizId, gamePin) {
-  const game = await addDoc(collection(db, 'games'), { gamePin, quizId, hostId, status: 'lobby', currentQuestion: -1, questionStartedAt: null, questionEndsAt: null, createdAt: serverTimestamp() });
+  const quizSnap = await getDoc(doc(db, 'quizzes', quizId));
+  if (!quizSnap.exists()) throw new Error('Quiz not found.');
+  const quiz = quizSnap.data();
+  const playerQuestions = (quiz.questions || []).map(({ text, options, timer }) => ({ text, options, timer }));
+  const game = await addDoc(collection(db, 'games'), {
+    gamePin,
+    quizId,
+    quizTitle: quiz.title,
+    playerQuestions,
+    hostId,
+    status: 'lobby',
+    currentQuestion: -1,
+    questionStartedAt: null,
+    questionEndsAt: null,
+    revealedQuestionIndex: null,
+    revealedCorrectOption: null,
+    revealedCorrectCount: 0,
+    revealedIncorrectCount: 0,
+    createdAt: serverTimestamp(),
+  });
   return game.id;
 }
 
@@ -53,6 +72,10 @@ export async function startQuestion(gameId, questionIndex, duration) {
     currentQuestion: questionIndex,
     questionStartedAt: startedAt,
     questionEndsAt: Timestamp.fromMillis(startedAt.toMillis() + seconds * 1000),
+    revealedQuestionIndex: null,
+    revealedCorrectOption: null,
+    revealedCorrectCount: 0,
+    revealedIncorrectCount: 0,
     updatedAt: serverTimestamp(),
   });
 }
@@ -60,7 +83,7 @@ export async function startQuestion(gameId, questionIndex, duration) {
 export async function showResults(gameId) { await updateDoc(doc(db, 'games', gameId), { status: 'results' }); }
 export async function finishGame(gameId) { await updateDoc(doc(db, 'games', gameId), { status: 'finished' }); }
 
-export async function submitAnswer(gameId, playerId, questionIndex, selectedOption, correctOption, startedAt, endsAt) {
+export async function submitAnswer(gameId, playerId, questionIndex, selectedOption) {
   const playerRef = doc(db, 'games', gameId, 'players', playerId);
   const answerRef = doc(db, 'games', gameId, 'answers', `${playerId}_${questionIndex}`);
   await runTransaction(db, async (transaction) => {
@@ -75,13 +98,62 @@ export async function submitAnswer(gameId, playerId, questionIndex, selectedOpti
       throw new Error('Question time has expired.');
     }
     if (!playerSnap.exists() || answerSnap.exists()) throw new Error('You have already answered.');
-    const isCorrect = selectedOption === correctOption;
-    const startedMillis = timestampToMillis(startedAt);
-    const endsMillis = timestampToMillis(endsAt);
-    const points = isCorrect && startedMillis && endsMillis
-      ? 100 + Math.max(0, Math.round(((endsMillis - Date.now()) / Math.max(1, endsMillis - startedMillis)) * 50))
-      : 0;
-    transaction.set(answerRef, { playerId, questionIndex, selectedOption, isCorrect, points, answeredAt: serverTimestamp() });
-    transaction.update(playerRef, { score: (playerSnap.data().score || 0) + points, currentAnswer: selectedOption, answeredAt: serverTimestamp() });
+    transaction.set(answerRef, { playerId, questionIndex, selectedOption, answeredAt: serverTimestamp(), points: 0, correct: null });
+    transaction.update(playerRef, { currentAnswer: selectedOption, answeredAt: serverTimestamp() });
+  });
+}
+
+export async function revealAnswer(gameId, questionIndex, correctOption) {
+  const gameRef = doc(db, 'games', gameId);
+  const answerQuery = query(collection(db, 'games', gameId, 'answers'), where('questionIndex', '==', questionIndex));
+  const playerQuery = collection(db, 'games', gameId, 'players');
+  await runTransaction(db, async (transaction) => {
+    const [gameSnap, answerSnap, playerSnap] = await Promise.all([
+      transaction.get(gameRef),
+      transaction.get(answerQuery),
+      transaction.get(playerQuery),
+    ]);
+    if (!gameSnap.exists()) throw new Error('Game not found.');
+    const game = gameSnap.data();
+    if (game.revealedQuestionIndex === questionIndex) return;
+    if (game.currentQuestion !== questionIndex) throw new Error('That question is no longer active.');
+
+    const playersById = new Map(playerSnap.docs.map((item) => [item.id, item]));
+    const startedMillis = timestampToMillis(game.questionStartedAt);
+    const endsMillis = timestampToMillis(game.questionEndsAt);
+    let correctCount = 0;
+    let answeredCount = 0;
+    answerSnap.docs.forEach((answerDoc) => {
+      const answer = answerDoc.data();
+      const isCorrect = answer.selectedOption === correctOption;
+      if (isCorrect) correctCount += 1;
+      answeredCount += 1;
+      const answeredMillis = timestampToMillis(answer.answeredAt);
+      const remainingTime = startedMillis && endsMillis && answeredMillis
+        ? Math.max(0, Math.min(endsMillis - startedMillis, endsMillis - answeredMillis))
+        : 0;
+      const totalTime = Math.max(1, (endsMillis || 0) - (startedMillis || 0));
+      const points = isCorrect && remainingTime > 0
+        ? Math.max(5, Math.min(20, Math.round(20 * (remainingTime / totalTime))))
+        : 0;
+      transaction.update(answerDoc.ref, { correct: isCorrect, points, resolvedAt: serverTimestamp() });
+      const playerDoc = playersById.get(answer.playerId);
+      if (playerDoc) {
+        transaction.update(playerDoc.ref, {
+          score: (playerDoc.data().score || 0) + points,
+          lastQuestionIndex: questionIndex,
+          lastCorrect: isCorrect,
+          lastPoints: points,
+        });
+      }
+    });
+    transaction.update(gameRef, {
+      status: 'results',
+      revealedQuestionIndex: questionIndex,
+      revealedCorrectOption: correctOption,
+      revealedCorrectCount: correctCount,
+      revealedIncorrectCount: answeredCount - correctCount,
+      revealedAt: serverTimestamp(),
+    });
   });
 }

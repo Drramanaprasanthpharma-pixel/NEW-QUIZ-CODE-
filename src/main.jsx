@@ -12,6 +12,7 @@ import {
   finishGame,
   joinGame,
   listQuizzes,
+  revealAnswer,
   saveQuiz,
   showResults,
   startQuestion,
@@ -680,18 +681,24 @@ function HostGame({ gameId, onBack }) {
             <h2>{question?.text}</h2>
           </div>
           <div className="answer-stats">
-            {question?.options.map((option, index) => (
-              <div className={`stat ${colors[index]}`} key={option}>
+            {question?.options.map((option, index) => {
+              const count = answers.filter((answer) => answer.selectedOption === index).length;
+              const revealed = game.revealedQuestionIndex === game.currentQuestion;
+              return (
+              <div className={`stat ${colors[index]} ${revealed && question.correct === index ? "correct" : ""}`} key={option}>
                 <b>{String.fromCharCode(65 + index)}</b>
                 <span>{option}</span>
-                <strong>
-                  {
-                    answers.filter((answer) => answer.selectedOption === index)
-                      .length
-                  }
-                </strong>
+                <strong>{count}</strong>
+                {revealed && question.correct === index && <small>✓ CORRECT</small>}
               </div>
-            ))}
+              );
+            })}
+          </div>
+          <div className="answer-summary">
+            <span>Total answered: <strong>{answers.length} / {players.length}</strong></span>
+            {game.revealedQuestionIndex === game.currentQuestion && (
+              <span>Correct: <strong>{game.revealedCorrectCount || 0}</strong> &nbsp; Incorrect: <strong>{game.revealedIncorrectCount || 0}</strong></span>
+            )}
           </div>
         </div>
       )}
@@ -706,20 +713,22 @@ function HostGame({ gameId, onBack }) {
           </button>
         )}
         {game.status === "question" && (
-          <button className="primary" onClick={() => showResults(gameId)}>
-            Reveal results <Trophy size={17} />
+          <button className="primary" onClick={() => revealAnswer(gameId, game.currentQuestion, question.correct)}>
+            Reveal answer <Trophy size={17} />
           </button>
         )}
         {game.status === "results" && (
           <>
             <Leaderboard players={players} />
-            <button
-              className="primary"
-              onClick={isLast ? () => finishGame(gameId) : begin}
-            >
-              {isLast ? "Finish game" : "Next question"}{" "}
-              <ArrowRight size={17} />
-            </button>
+            {game.revealedQuestionIndex !== game.currentQuestion ? (
+              <button className="primary" onClick={() => revealAnswer(gameId, game.currentQuestion, question.correct)}>
+                Reveal answer <Trophy size={17} />
+              </button>
+            ) : (
+              <button className="primary" onClick={isLast ? () => finishGame(gameId) : begin}>
+                {isLast ? "Finish game" : "Next question"} <ArrowRight size={17} />
+              </button>
+            )}
           </>
         )}
         {game.status === "finished" && (
@@ -789,8 +798,12 @@ function PlayerApp({ go }) {
     if (gameId) return subscribeToPlayers(gameId, setPlayers);
   }, [gameId]);
   useEffect(() => {
-    if (game?.quizId) return subscribeToQuiz(game.quizId, setQuiz);
-  }, [game?.quizId]);
+    if (!game?.playerQuestions) {
+      setQuiz(null);
+      return;
+    }
+    setQuiz({ title: game.quizTitle, questions: game.playerQuestions });
+  }, [game?.playerQuestions, game?.quizTitle]);
   if (!gameId)
     return (
       <JoinForm
@@ -845,6 +858,7 @@ function PlayerApp({ go }) {
             <p className="kicker">YOU ARE IN</p>
             <h1>Hang tight, {nickname}.</h1>
             <p>The host will start the first question soon.</p>
+            <ScoringInfo />
             <PlayerPills players={players} />
           </div>
         )}
@@ -935,6 +949,18 @@ function JoinForm({ pin, setPin, nickname, setNickname, error, onJoin, go }) {
     </Shell>
   );
 }
+function ScoringInfo() {
+  return (
+    <div className="scoring-info">
+      <strong>HOW SCORING WORKS</strong>
+      <p>Each question = 20 points maximum.</p>
+      <p>✓ Correct + fastest answer: up to 20 points</p>
+      <p>✓ Correct answer: minimum 5 points</p>
+      <p>✗ Wrong answer: 0 points</p>
+      <p>⏱ Faster correct answers earn more points.</p>
+    </div>
+  );
+}
 function PlayerQuestion({ game, question, gameId, playerId }) {
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("idle");
@@ -972,9 +998,6 @@ function PlayerQuestion({ game, question, gameId, playerId }) {
         playerId,
         game.currentQuestion,
         index,
-        question.correct,
-        game.questionStartedAt,
-        game.questionEndsAt,
       );
       setStatus("submitted");
     } catch (err) {
@@ -1042,6 +1065,14 @@ function ResultView({ game, question, players, playerId, finished }) {
             {question?.options[player?.currentAnswer] || "No answer"}
           </strong>
         </p>
+      )}
+      {game.revealedQuestionIndex === game.currentQuestion ? (
+        <div className="answer-result">
+          <p>Correct answer: <strong>{String.fromCharCode(65 + game.revealedCorrectOption)} — {question?.options[game.revealedCorrectOption]}</strong></p>
+          <p>{player?.lastQuestionIndex === game.currentQuestion && player.lastCorrect ? "Correct" : "Incorrect"} &nbsp; · &nbsp; {player?.lastQuestionIndex === game.currentQuestion ? `${player.lastPoints || 0} points` : "0 points"}</p>
+        </div>
+      ) : (
+        <p className="answer-feedback">The host will reveal the correct answer soon.</p>
       )}
       <div className="result-score">
         <strong>{player?.score || 0}</strong>
