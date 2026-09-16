@@ -39,6 +39,8 @@ import { QRCodeSVG } from "qrcode.react";
 import "./styles.css";
 
 const colors = ["coral", "gold", "teal", "violet"];
+const PLAYER_ROUTE = "/play";
+const PRODUCTION_ORIGIN = "https://live-quiz.vercel.app";
 const blankQuestion = () => ({
   text: "",
   options: ["", "", "", ""],
@@ -65,11 +67,42 @@ function App() {
   }, []);
   if (path === "/host" || path.startsWith("/host/"))
     return <HostApp user={user} go={go} />;
-  if ((path === "/play" || path.startsWith("/play/")) && (firebaseError || !db))
+  if ((path === PLAYER_ROUTE || path.startsWith(`${PLAYER_ROUTE}/`)) && (firebaseError || !db))
     return <FirebaseUnavailable go={go} />;
-  if (path === "/play" || path.startsWith("/play/"))
+  if (path === PLAYER_ROUTE || path.startsWith(`${PLAYER_ROUTE}/`))
     return <PlayerApp go={go} />;
   return <Home go={go} />;
+}
+
+class AppErrorBoundary extends React.Component {
+  state = { error: null };
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error) {
+    console.error("Pulse Quiz failed to render.", error);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <main className="shell">
+        <section className="auth-panel">
+          <p className="kicker">PULSE QUIZ ERROR</p>
+          <h1>We could not load this page.</h1>
+          <p>
+            Refresh the page and try again. If the problem continues, return to
+            the home page and open the player join page again.
+          </p>
+          <button className="primary full" onClick={() => window.location.reload()}>
+            Reload Pulse Quiz <ArrowRight size={18} />
+          </button>
+        </section>
+      </main>
+    );
+  }
 }
 
 function FirebaseUnavailable({ go }) {
@@ -464,7 +497,7 @@ function HostGameLegacy({ gameId, go }) {
         ?.timer || 20,
     );
   const isLast = game.currentQuestion >= quiz.questions.length - 1;
-    const playerUrl = new URL("https://live-quiz.vercel.app/play");
+    const playerUrl = new URL(PLAYER_ROUTE, PRODUCTION_ORIGIN);
     playerUrl.searchParams.set("pin", game.gamePin);
   return (
     <section className="host-game">
@@ -603,7 +636,7 @@ function HostGame({ gameId, onBack }) {
         ?.timer || 20,
     );
   const isLast = game.currentQuestion >= quiz.questions.length - 1;
-  const playerUrl = new URL("https://live-quiz.vercel.app/play");
+  const playerUrl = new URL(PLAYER_ROUTE, PRODUCTION_ORIGIN);
   playerUrl.searchParams.set("pin", game.gamePin);
   return (
     <section className="host-game">
@@ -766,6 +799,10 @@ function PlayerApp({ go }) {
         onJoin={async (event) => {
           event.preventDefault();
           setError("");
+          if (!/^\d{6}$/.test(pin)) {
+            setError("Enter a valid Game PIN to join.");
+            return;
+          }
           try {
             const found = await findGame(pin);
             const id = await joinGame(found, nickname);
@@ -1008,4 +1045,8 @@ function ResultView({ game, question, players, playerId, finished }) {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(
+  <AppErrorBoundary>
+    <App />
+  </AppErrorBoundary>,
+);
