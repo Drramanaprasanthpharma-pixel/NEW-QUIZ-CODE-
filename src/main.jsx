@@ -964,32 +964,30 @@ function ScoringInfo() {
 function PlayerQuestion({ game, question, gameId, playerId }) {
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("idle");
-  const remainingSeconds = () => {
-    const endsAt = timestampToMillis(game.questionEndsAt);
-    if (!endsAt) return 0;
-    return Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
-  };
-  const [seconds, setSeconds] = useState(remainingSeconds);
+  const [seconds, setSeconds] = useState(null);
   useEffect(() => {
     setSelected(null);
     setStatus("idle");
-    setSeconds(remainingSeconds());
-  }, [game.currentQuestion, game.questionEndsAt]);
+  }, [game.currentQuestion]);
   useEffect(() => {
-    let timer;
+    const startedAt = timestampToMillis(game.questionStartedAt);
+    const endsAt = timestampToMillis(game.questionEndsAt);
+    if (!startedAt || !endsAt || endsAt < startedAt) {
+      setSeconds(null);
+      return undefined;
+    }
+
     const updateTimer = () => {
-      const nextSeconds = remainingSeconds();
+      const nextSeconds = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
       setSeconds(nextSeconds);
-      if (nextSeconds === 0) window.clearInterval(timer);
       return nextSeconds;
     };
-    const initialSeconds = updateTimer();
-    if (initialSeconds === 0) return undefined;
-    timer = window.setInterval(updateTimer, 250);
-    return () => clearInterval(timer);
-  }, [game.currentQuestion, game.questionEndsAt]);
+    updateTimer();
+    const timer = window.setInterval(updateTimer, 250);
+    return () => window.clearInterval(timer);
+  }, [game.currentQuestion, game.questionStartedAt, game.questionEndsAt]);
   const answer = async (index) => {
-    if (selected !== null || seconds <= 0) return;
+    if (selected !== null || seconds === null || seconds <= 0) return;
     setSelected(index);
     setStatus("submitting");
     try {
@@ -1011,20 +1009,20 @@ function PlayerQuestion({ game, question, gameId, playerId }) {
       <div className="timer-bar">
         <span
           style={{
-            width: `${Math.min(100, (seconds / question.timer) * 100)}%`,
+            width: `${seconds === null ? 0 : Math.min(100, (seconds / question.timer) * 100)}%`,
           }}
         />
       </div>
       <div className="question-meta">
         <span>QUESTION {game.currentQuestion + 1}</span>
-        <strong>{seconds}s</strong>
+        <strong>{seconds === null ? "Starting..." : `${seconds}s`}</strong>
       </div>
       <h1>{question.text}</h1>
       <div className="play-options">
         {question.options.map((option, index) => (
           <button
             className={`play-option ${colors[index]} ${selected === index ? "selected" : ""}`}
-            disabled={selected !== null || seconds <= 0}
+            disabled={selected !== null || seconds === null || seconds <= 0}
             onClick={() => answer(index)}
             key={option}
           >

@@ -7,6 +7,7 @@ import { db } from './firebase';
 export function timestampToMillis(value) {
   if (!value) return null;
   if (typeof value.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
   if (typeof value === 'number') return value < 100000000000 ? value * 1000 : value;
   if (typeof value.seconds === 'number') return value.seconds * 1000 + (value.nanoseconds || 0) / 1000000;
   return null;
