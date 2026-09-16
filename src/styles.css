@@ -556,6 +556,30 @@ input {
   margin-top: 55px;
   padding: 55px;
 }
+.lobby-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 44px;
+  text-align: center;
+}
+.lobby-qr svg {
+  display: block;
+  width: min(240px, 70vw);
+  height: auto;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--ink);
+}
+.lobby-qr strong {
+  font: 600 13px "Syne";
+  letter-spacing: 0.14em;
+}
+.lobby-qr span {
+  color: #6f5d2c;
+  font-size: 11px;
+}
 .lobby-message {
   text-align: center;
 }
@@ -933,6 +957,9 @@ input {
   .lobby {
     padding: 35px 15px;
     margin-top: 35px;
+  }
+  .lobby-qr {
+    margin-bottom: 35px;
   }
   .question-prompt {
     padding: 25px 18px;

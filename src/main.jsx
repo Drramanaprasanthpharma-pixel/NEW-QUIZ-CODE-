@@ -603,6 +603,8 @@ function HostGame({ gameId, onBack }) {
         ?.timer || 20,
     );
   const isLast = game.currentQuestion >= quiz.questions.length - 1;
+  const playerUrl = new URL("https://live-quiz.vercel.app/play");
+  playerUrl.searchParams.set("pin", game.gamePin);
   return (
     <section className="host-game">
       <div className="live-head">
@@ -610,19 +612,21 @@ function HostGame({ gameId, onBack }) {
           <p className="kicker">LIVE ROOM / {game.status.toUpperCase()}</p>
           <h1>{quiz.title}</h1>
         </div>
-        <div className="pin">
-          <span>GAME PIN</span>
-          <strong>{game.gamePin}</strong>
-          <button
-            title="Copy game PIN"
-            onClick={() => navigator.clipboard?.writeText(game.gamePin)}
-          >
-            <Copy size={16} />
-          </button>
-        </div>
       </div>
       {game.status === "lobby" && (
         <div className="lobby">
+          <div className="lobby-qr">
+            <QRCodeSVG
+              value={playerUrl.toString()}
+              size={240}
+              marginSize={4}
+              bgColor="#ffffff"
+              fgColor="#171719"
+              title={`Scan to join game ${game.gamePin}`}
+            />
+            <strong>SCAN TO JOIN</strong>
+            <span>Scan with your phone camera</span>
+          </div>
           <div className="lobby-message">
             <Radio size={26} />
             <h2>Waiting for your players</h2>
