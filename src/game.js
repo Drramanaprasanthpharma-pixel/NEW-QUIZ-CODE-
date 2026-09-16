@@ -49,7 +49,15 @@ export async function submitAnswer(gameId, playerId, questionIndex, selectedOpti
   const playerRef = doc(db, 'games', gameId, 'players', playerId);
   const answerRef = doc(db, 'games', gameId, 'answers', `${playerId}_${questionIndex}`);
   await runTransaction(db, async (transaction) => {
-    const [playerSnap, answerSnap] = await Promise.all([transaction.get(playerRef), transaction.get(answerRef)]);
+    const [gameSnap, playerSnap, answerSnap] = await Promise.all([
+      transaction.get(doc(db, 'games', gameId)),
+      transaction.get(playerRef),
+      transaction.get(answerRef),
+    ]);
+    const gameData = gameSnap.data();
+    if (!gameSnap.exists() || gameData.status !== 'question' || gameData.currentQuestion !== questionIndex || gameData.questionEndsAt <= Date.now()) {
+      throw new Error('Question time has expired.');
+    }
     if (!playerSnap.exists() || answerSnap.exists()) throw new Error('You have already answered.');
     const isCorrect = selectedOption === correctOption;
     const points = isCorrect ? 100 + Math.max(0, Math.round(((endsAt - Date.now()) / Math.max(1, endsAt - startedAt)) * 50)) : 0;

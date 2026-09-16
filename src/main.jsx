@@ -935,25 +935,29 @@ function JoinForm({ pin, setPin, nickname, setNickname, error, onJoin, go }) {
 function PlayerQuestion({ game, question, gameId, playerId }) {
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("idle");
-  const [seconds, setSeconds] = useState(
-    Math.max(0, Math.ceil((game.questionEndsAt - Date.now()) / 1000)),
-  );
+  const remainingSeconds = () =>
+    Math.max(0, Math.ceil((game.questionEndsAt - Date.now()) / 1000));
+  const [seconds, setSeconds] = useState(remainingSeconds);
   useEffect(() => {
     setSelected(null);
     setStatus("idle");
-  }, [game.currentQuestion]);
+    setSeconds(remainingSeconds());
+  }, [game.currentQuestion, game.questionEndsAt]);
   useEffect(() => {
-    const timer = setInterval(
-      () =>
-        setSeconds(
-          Math.max(0, Math.ceil((game.questionEndsAt - Date.now()) / 1000)),
-        ),
-      250,
-    );
+    let timer;
+    const updateTimer = () => {
+      const nextSeconds = remainingSeconds();
+      setSeconds(nextSeconds);
+      if (nextSeconds === 0) window.clearInterval(timer);
+      return nextSeconds;
+    };
+    const initialSeconds = updateTimer();
+    if (initialSeconds === 0) return undefined;
+    timer = window.setInterval(updateTimer, 250);
     return () => clearInterval(timer);
-  }, [game.questionEndsAt]);
+  }, [game.currentQuestion, game.questionEndsAt]);
   const answer = async (index) => {
-    if (selected !== null) return;
+    if (selected !== null || seconds <= 0) return;
     setSelected(index);
     setStatus("submitting");
     try {
