@@ -20,6 +20,7 @@ import {
   subscribeToPlayers,
   subscribeToQuiz,
   submitAnswer,
+  timestampToMillis,
 } from "./game";
 import {
   ArrowRight,
@@ -621,7 +622,9 @@ function HostGame({ gameId, onBack }) {
   }, [gameId, game?.currentQuestion]);
   useEffect(() => {
     if (game?.status !== "question" || !game.questionEndsAt) return undefined;
-    const remaining = Math.max(0, game.questionEndsAt - Date.now());
+    const endsAt = timestampToMillis(game.questionEndsAt);
+    if (!endsAt) return undefined;
+    const remaining = Math.max(0, endsAt - Date.now());
     const timer = setTimeout(() => showResults(gameId), remaining);
     return () => clearTimeout(timer);
   }, [game?.status, game?.questionEndsAt, gameId]);
@@ -935,8 +938,11 @@ function JoinForm({ pin, setPin, nickname, setNickname, error, onJoin, go }) {
 function PlayerQuestion({ game, question, gameId, playerId }) {
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("idle");
-  const remainingSeconds = () =>
-    Math.max(0, Math.ceil((game.questionEndsAt - Date.now()) / 1000));
+  const remainingSeconds = () => {
+    const endsAt = timestampToMillis(game.questionEndsAt);
+    if (!endsAt) return 0;
+    return Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+  };
   const [seconds, setSeconds] = useState(remainingSeconds);
   useEffect(() => {
     setSelected(null);

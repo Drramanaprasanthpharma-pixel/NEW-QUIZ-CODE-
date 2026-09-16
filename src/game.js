@@ -1,8 +1,16 @@
 import {
   addDoc, collection, doc, getDoc, onSnapshot, orderBy, query,
-  runTransaction, serverTimestamp, updateDoc, where, getDocs,
+  runTransaction, serverTimestamp, Timestamp, updateDoc, where, getDocs,
 } from 'firebase/firestore';
 import { db } from './firebase';
+
+export function timestampToMillis(value) {
+  if (!value) return null;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value === 'number') return value < 100000000000 ? value * 1000 : value;
+  if (typeof value.seconds === 'number') return value.seconds * 1000 + (value.nanoseconds || 0) / 1000000;
+  return null;
+}
 
 export const subscribeToQuiz = (id, callback) => onSnapshot(doc(db, 'quizzes', id), (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null));
 export const subscribeToGame = (id, callback) => onSnapshot(doc(db, 'games', id), (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null));
@@ -38,8 +46,15 @@ export async function joinGame(game, nickname) {
 }
 
 export async function startQuestion(gameId, questionIndex, duration) {
-  const started = Date.now();
-  await updateDoc(doc(db, 'games', gameId), { status: 'question', currentQuestion: questionIndex, questionStartedAt: started, questionEndsAt: started + duration * 1000 });
+  const seconds = Math.max(1, Number(duration) || 20);
+  const startedAt = Timestamp.now();
+  await updateDoc(doc(db, 'games', gameId), {
+    status: 'question',
+    currentQuestion: questionIndex,
+    questionStartedAt: startedAt,
+    questionEndsAt: Timestamp.fromMillis(startedAt.toMillis() + seconds * 1000),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function showResults(gameId) { await updateDoc(doc(db, 'games', gameId), { status: 'results' }); }
@@ -55,12 +70,17 @@ export async function submitAnswer(gameId, playerId, questionIndex, selectedOpti
       transaction.get(answerRef),
     ]);
     const gameData = gameSnap.data();
-    if (!gameSnap.exists() || gameData.status !== 'question' || gameData.currentQuestion !== questionIndex || gameData.questionEndsAt <= Date.now()) {
+    const questionEndsAt = gameSnap.exists() ? timestampToMillis(gameData.questionEndsAt) : null;
+    if (!gameSnap.exists() || gameData.status !== 'question' || gameData.currentQuestion !== questionIndex || !questionEndsAt || questionEndsAt <= Date.now()) {
       throw new Error('Question time has expired.');
     }
     if (!playerSnap.exists() || answerSnap.exists()) throw new Error('You have already answered.');
     const isCorrect = selectedOption === correctOption;
-    const points = isCorrect ? 100 + Math.max(0, Math.round(((endsAt - Date.now()) / Math.max(1, endsAt - startedAt)) * 50)) : 0;
+    const startedMillis = timestampToMillis(startedAt);
+    const endsMillis = timestampToMillis(endsAt);
+    const points = isCorrect && startedMillis && endsMillis
+      ? 100 + Math.max(0, Math.round(((endsMillis - Date.now()) / Math.max(1, endsMillis - startedMillis)) * 50))
+      : 0;
     transaction.set(answerRef, { playerId, questionIndex, selectedOption, isCorrect, points, answeredAt: serverTimestamp() });
     transaction.update(playerRef, { score: (playerSnap.data().score || 0) + points, currentAnswer: selectedOption, answeredAt: serverTimestamp() });
   });
