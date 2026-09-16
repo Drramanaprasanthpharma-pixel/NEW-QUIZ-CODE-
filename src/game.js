@@ -13,11 +13,18 @@ export function timestampToMillis(value) {
   return null;
 }
 
-export const subscribeToQuiz = (id, callback) => onSnapshot(doc(db, 'quizzes', id), (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null));
-export const subscribeToGame = (id, callback) => onSnapshot(doc(db, 'games', id), (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null));
-export const subscribeToPlayers = (id, callback) => onSnapshot(query(collection(db, 'games', id, 'players'), orderBy('joinedAt')), (snap) => callback(snap.docs.map((item) => ({ id: item.id, ...item.data() }))));
-export const subscribeToAnswers = (id, questionIndex, callback) => onSnapshot(query(collection(db, 'games', id, 'answers'), where('questionIndex', '==', questionIndex)), (snap) => callback(snap.docs.map((item) => ({ id: item.id, ...item.data() }))));
-export const listQuizzes = (hostId, callback) => onSnapshot(query(collection(db, 'quizzes'), where('hostId', '==', hostId)), (snap) => callback(snap.docs.map((item) => ({ id: item.id, ...item.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))));
+// Every listener below accepts an optional onError callback. Firestore's
+// realtime listeners never resolve/reject like a normal promise - if the
+// connection is blocked (flaky mobile data, a locked-down WiFi network) or
+// the read is denied, onSnapshot's success callback simply never fires again.
+// Without an error handler that hangs the UI on its loading state forever,
+// so every subscription here reports failures instead of hanging silently.
+const noop = () => {};
+export const subscribeToQuiz = (id, callback, onError = noop) => onSnapshot(doc(db, 'quizzes', id), (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null), onError);
+export const subscribeToGame = (id, callback, onError = noop) => onSnapshot(doc(db, 'games', id), (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null), onError);
+export const subscribeToPlayers = (id, callback, onError = noop) => onSnapshot(query(collection(db, 'games', id, 'players'), orderBy('joinedAt')), (snap) => callback(snap.docs.map((item) => ({ id: item.id, ...item.data() }))), onError);
+export const subscribeToAnswers = (id, questionIndex, callback, onError = noop) => onSnapshot(query(collection(db, 'games', id, 'answers'), where('questionIndex', '==', questionIndex)), (snap) => callback(snap.docs.map((item) => ({ id: item.id, ...item.data() }))), onError);
+export const listQuizzes = (hostId, callback, onError = noop) => onSnapshot(query(collection(db, 'quizzes'), where('hostId', '==', hostId)), (snap) => callback(snap.docs.map((item) => ({ id: item.id, ...item.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))), onError);
 
 export async function saveQuiz(hostId, quiz, id) {
   if (!db) throw new Error('Firestore is not initialized. Check the Vercel Firebase environment variables.');

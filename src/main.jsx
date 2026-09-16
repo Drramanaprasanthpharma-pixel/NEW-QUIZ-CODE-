@@ -783,10 +783,11 @@ function Leaderboard({ players }) {
 
 function PlayerApp({ go }) {
   const [game, setGame] = useState(null);
-  const [playerId, setPlayerId] = useState(sessionStorage.getItem("playerId"));
-  const [gameId, setGameId] = useState(sessionStorage.getItem("gameId"));
+  const [gameLoadError, setGameLoadError] = useState("");
+  const [playerId, setPlayerId] = useState(() => safeStorage.get("playerId"));
+  const [gameId, setGameId] = useState(() => safeStorage.get("gameId"));
   const [nickname, setNickname] = useState(
-    sessionStorage.getItem("nickname") || "",
+    () => safeStorage.get("nickname") || "",
   );
   const [pin, setPin] = useState(
     () =>
@@ -796,13 +797,51 @@ function PlayerApp({ go }) {
         .slice(0, 6) || "",
   );
   const [error, setError] = useState("");
+  const [joining, setJoining] = useState(false);
   const [players, setPlayers] = useState([]);
   const [quiz, setQuiz] = useState(null);
+  const leaveStaleSession = () => {
+    safeStorage.clear("gameId", "playerId", "nickname");
+    setGameId(null);
+    setPlayerId(null);
+    setGame(null);
+    setGameLoadError("");
+  };
   useEffect(() => {
-    if (gameId) return subscribeToGame(gameId, setGame);
+    if (!gameId) return undefined;
+    setGameLoadError("");
+    // If the room can't be reached at all (network down, listener blocked by
+    // the network, etc.) show a real error instead of spinning forever.
+    const timeout = window.setTimeout(() => {
+      setGameLoadError((current) =>
+        current ||
+        "This is taking longer than expected. Check your connection, or the game may have ended.",
+      );
+    }, 12000);
+    const unsubscribe = subscribeToGame(
+      gameId,
+      (value) => {
+        window.clearTimeout(timeout);
+        setGameLoadError("");
+        setGame(value);
+      },
+      (err) => {
+        window.clearTimeout(timeout);
+        console.error("Game listener failed.", err);
+        setGameLoadError(
+          err.code === "permission-denied"
+            ? "Could not access this room (permission denied)."
+            : "Lost connection to the quiz server.",
+        );
+      },
+    );
+    return () => {
+      window.clearTimeout(timeout);
+      unsubscribe();
+    };
   }, [gameId]);
   useEffect(() => {
-    if (gameId) return subscribeToPlayers(gameId, setPlayers);
+    if (gameId) return subscribeToPlayers(gameId, setPlayers, (err) => console.error("Players listener failed.", err));
   }, [gameId]);
   useEffect(() => {
     if (!game?.playerQuestions) {
@@ -819,6 +858,7 @@ function PlayerApp({ go }) {
         nickname={nickname}
         setNickname={setNickname}
         error={error}
+        joining={joining}
         onJoin={async (event) => {
           event.preventDefault();
           setError("");
@@ -826,20 +866,41 @@ function PlayerApp({ go }) {
             setError("Enter a valid Game PIN to join.");
             return;
           }
+          if (!nickname.trim()) {
+            setError("Enter a nickname to join.");
+            return;
+          }
+          setJoining(true);
           try {
             const found = await findGame(pin);
             const id = await joinGame(found, nickname);
-            sessionStorage.setItem("gameId", found.id);
-            sessionStorage.setItem("playerId", id);
-            sessionStorage.setItem("nickname", nickname.trim());
+            safeStorage.set("gameId", found.id);
+            safeStorage.set("playerId", id);
+            safeStorage.set("nickname", nickname.trim());
             setGameId(found.id);
             setPlayerId(id);
           } catch (err) {
+            console.error("Join failed.", err);
             setError(err.message || "Could not join this game.");
+          } finally {
+            setJoining(false);
           }
         }}
         go={go}
       />
+    );
+  if (gameLoadError)
+    return (
+      <Shell go={go}>
+        <section className="auth-panel">
+          <p className="kicker">CONNECTION PROBLEM</p>
+          <h1>We couldn't load this room.</h1>
+          <p>{gameLoadError}</p>
+          <button className="primary full" onClick={leaveStaleSession}>
+            Back to join screen <ArrowRight size={18} />
+          </button>
+        </section>
+      </Shell>
     );
   if (!game || !quiz)
     return (
@@ -901,16 +962,55 @@ function PlayerApp({ go }) {
 async function findGame(pin) {
   const { collection, getDocs, query, where } =
     await import("firebase/firestore");
-  const snap = await getDocs(
-    query(
-      collection((await import("./firebase")).db, "games"),
-      where("gamePin", "==", pin.trim()),
-    ),
-  );
+  let snap;
+  try {
+    snap = await getDocs(
+      query(
+        collection((await import("./firebase")).db, "games"),
+        where("gamePin", "==", pin.trim()),
+      ),
+    );
+  } catch (err) {
+    console.error("Looking up the game PIN failed.", err);
+    throw new Error(
+      err.code === "permission-denied"
+        ? "Could not look up that PIN (permission denied). Ask the host to check Firestore access."
+        : "Could not reach the quiz server. Check your connection and try again.",
+    );
+  }
   if (snap.empty) throw new Error("No live game found with that PIN.");
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
-function JoinForm({ pin, setPin, nickname, setNickname, error, onJoin, go }) {
+
+// Wrap sessionStorage access: some mobile in-app browsers (and private
+// browsing modes) throw when storage is accessed at all. Without this guard
+// that throw happens during render and can leave the page blank.
+const safeStorage = {
+  get(key) {
+    try {
+      return sessionStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set(key, value) {
+    try {
+      sessionStorage.setItem(key, value);
+    } catch {
+      /* ignore - session just won't persist across reloads */
+    }
+  },
+  clear(...keys) {
+    keys.forEach((key) => {
+      try {
+        sessionStorage.removeItem(key);
+      } catch {
+        /* ignore */
+      }
+    });
+  },
+};
+function JoinForm({ pin, setPin, nickname, setNickname, error, joining, onJoin, go }) {
   return (
     <Shell go={go}>
       <section className="join">
@@ -945,8 +1045,8 @@ function JoinForm({ pin, setPin, nickname, setNickname, error, onJoin, go }) {
             />
           </label>
           {error && <div className="error">{error}</div>}
-          <button className="primary full">
-            Enter the room <ArrowRight size={18} />
+          <button className="primary full" type="submit" disabled={joining}>
+            {joining ? "Joining..." : "Enter the room"} <ArrowRight size={18} />
           </button>
         </form>
         <button className="back home-link" onClick={() => go("/")}>
