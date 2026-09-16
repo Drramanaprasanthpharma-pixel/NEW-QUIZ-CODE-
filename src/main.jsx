@@ -145,6 +145,13 @@ function Home({ go }) {
     <Shell go={go}>
       <section className="home">
         <div className="home-copy">
+          <div className="event-branding" aria-label="Pharmacist Day 2026 event">
+            <span className="event-organization">SRI RAMAKRISHNA HOSPITAL</span>
+            <h2>PHARMACIST DAY 2026</h2>
+            <span className="event-department">
+              Department of Clinical Pharmacy and Pharmacy
+            </span>
+          </div>
           <p className="kicker">REAL-TIME TRIVIA / 01</p>
           <h1>
             Make every answer
