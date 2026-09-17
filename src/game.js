@@ -158,7 +158,7 @@ export async function revealAnswer(gameId, questionIndex, correctOption) {
         : 0;
       const totalTime = Math.max(1, (endsMillis || 0) - (startedMillis || 0));
       const points = isCorrect && remainingTime > 0
-        ? Math.max(5, Math.min(20, Math.round(20 * (remainingTime / totalTime))))
+        ? Math.max(5, Math.ceil(20 * (remainingTime / totalTime)))
         : 0;
       transaction.update(answerDoc.ref, { correct: isCorrect, points, resolvedAt: serverTimestamp() });
       const playerDoc = playersById.get(answer.playerId);
