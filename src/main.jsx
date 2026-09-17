@@ -660,6 +660,16 @@ function HostGame({ gameId, onBack }) {
       {game.status === "lobby" && (
         <div className="lobby">
           <div className="lobby-qr">
+            <div className="pin">
+              <span>GAME PIN</span>
+              <strong>{game.gamePin}</strong>
+              <button
+                title="Copy game PIN"
+                onClick={() => navigator.clipboard?.writeText(game.gamePin)}
+              >
+                <Copy size={16} />
+              </button>
+            </div>
             <QRCodeSVG
               value={playerUrl.toString()}
               size={240}
