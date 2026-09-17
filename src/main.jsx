@@ -640,13 +640,14 @@ function HostGame({ gameId, onBack }) {
     setAnswers([]);
   }, [gameId, game?.currentQuestion]);
   useEffect(() => {
-    if (game?.status !== "question" || !game.questionEndsAt) return undefined;
-    const endsAt = timestampToMillis(game.questionEndsAt);
-    if (!endsAt) return undefined;
+    if (game?.status !== "question" || !game.questionStartedAt || !game.questionDurationMs) return undefined;
+    const startedMillis = timestampToMillis(game.questionStartedAt);
+    if (!startedMillis) return undefined;
+    const endsAt = startedMillis + game.questionDurationMs;
     const remaining = Math.max(0, endsAt - Date.now());
     const timer = setTimeout(() => showResults(gameId).catch((err) => console.error("Auto-advance to results failed.", err)), remaining);
     return () => clearTimeout(timer);
-  }, [game?.status, game?.questionEndsAt, gameId]);
+  }, [game?.status, game?.questionStartedAt, game?.questionDurationMs, gameId]);
   if (!game || !quiz)
     return <div className="loading">Loading live room...</div>;
   const question = quiz.questions[game.currentQuestion];
@@ -1131,8 +1132,8 @@ function PlayerQuestion({ game, question, gameId, playerId, onInvalidSession }) 
   }, [game.currentQuestion]);
   useEffect(() => {
     const startedAt = timestampToMillis(game.questionStartedAt);
-    const endsAt = timestampToMillis(game.questionEndsAt);
-    if (!startedAt || !endsAt || endsAt < startedAt) {
+    const durationMs = game.questionDurationMs;
+    if (!startedAt || !durationMs) {
       setSeconds(null);
       return undefined;
     }
@@ -1140,11 +1141,9 @@ function PlayerQuestion({ game, question, gameId, playerId, onInvalidSession }) 
     // clock - if a player's phone clock is off (no recent NTP sync, wrong
     // timezone; common on event WiFi), that comparison can be wrong by
     // minutes and lock the options out for the whole question, every
-    // question. Only the *duration* (a difference of two host-authored
-    // timestamps, so clock offset cancels out) is used, counted down from
-    // the moment THIS device received the question - off by at most normal
-    // network latency, not by however wrong this phone's clock is.
-    const durationMs = endsAt - startedAt;
+    // question. Only the duration (a plain number, not a timestamp) is
+    // used, counted down from the moment THIS device received the
+    // question - off by at most normal network latency.
     const localStart = Date.now();
     const updateTimer = () => {
       const elapsed = Date.now() - localStart;
@@ -1155,7 +1154,7 @@ function PlayerQuestion({ game, question, gameId, playerId, onInvalidSession }) 
     updateTimer();
     const timer = window.setInterval(updateTimer, 250);
     return () => window.clearInterval(timer);
-  }, [game.currentQuestion, game.questionStartedAt, game.questionEndsAt]);
+  }, [game.currentQuestion, game.questionStartedAt, game.questionDurationMs]);
   const answer = async (index) => {
     if (selected !== null || seconds === null || seconds <= 0) return;
     setSelected(index);

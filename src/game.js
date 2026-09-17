@@ -1,6 +1,6 @@
 import {
   addDoc, collection, doc, getDoc, onSnapshot, orderBy, query,
-  runTransaction, serverTimestamp, Timestamp, updateDoc, where, getDocs,
+  runTransaction, serverTimestamp, updateDoc, where, getDocs,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -50,6 +50,7 @@ export async function createGame(hostId, quizId, gamePin) {
     currentQuestion: -1,
     questionStartedAt: null,
     questionEndsAt: null,
+    questionDurationMs: null,
     revealedQuestionIndex: null,
     revealedCorrectOption: null,
     revealedCorrectCount: 0,
@@ -74,12 +75,21 @@ export async function joinGame(game, nickname) {
 
 export async function startQuestion(gameId, questionIndex, duration) {
   const seconds = Math.max(1, Number(duration) || 20);
-  const startedAt = Timestamp.now();
+  // questionStartedAt must be Firestore's own server clock (serverTimestamp()),
+  // not this device's local clock (Timestamp.now()) - every answer's
+  // answeredAt is always server time, and comparing a host-local clock
+  // against a server-time value scored every correct answer as 0 whenever
+  // the host's device clock ran even slightly behind real time. A
+  // serverTimestamp() sentinel can't be read synchronously to compute an
+  // absolute end time at write time, so only the duration is stored;
+  // readers derive questionStartedAt + questionDurationMs once the
+  // timestamp resolves.
   await updateDoc(doc(db, 'games', gameId), {
     status: 'question',
     currentQuestion: questionIndex,
-    questionStartedAt: startedAt,
-    questionEndsAt: Timestamp.fromMillis(startedAt.toMillis() + seconds * 1000),
+    questionStartedAt: serverTimestamp(),
+    questionDurationMs: seconds * 1000,
+    questionEndsAt: null,
     revealedQuestionIndex: null,
     revealedCorrectOption: null,
     revealedCorrectCount: 0,
@@ -144,7 +154,8 @@ export async function revealAnswer(gameId, questionIndex, correctOption) {
     if (game.currentQuestion !== questionIndex) throw new Error('That question is no longer active.');
 
     const startedMillis = timestampToMillis(game.questionStartedAt);
-    const endsMillis = timestampToMillis(game.questionEndsAt);
+    const durationMs = game.questionDurationMs || 0;
+    const endsMillis = startedMillis && durationMs ? startedMillis + durationMs : null;
     let correctCount = 0;
     let answeredCount = 0;
     answerSnap.docs.forEach((answerDoc) => {
@@ -156,7 +167,7 @@ export async function revealAnswer(gameId, questionIndex, correctOption) {
       const remainingTime = startedMillis && endsMillis && answeredMillis
         ? Math.max(0, Math.min(endsMillis - startedMillis, endsMillis - answeredMillis))
         : 0;
-      const totalTime = Math.max(1, (endsMillis || 0) - (startedMillis || 0));
+      const totalTime = Math.max(1, durationMs);
       const points = isCorrect && remainingTime > 0
         ? Math.max(5, Math.ceil(20 * (remainingTime / totalTime)))
         : 0;
