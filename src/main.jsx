@@ -243,7 +243,21 @@ function HostDashboard({ user, go }) {
   const [quizzes, setQuizzes] = useState([]);
   const [editing, setEditing] = useState(null);
   const [game, setGame] = useState(null);
+  const [startError, setStartError] = useState("");
+  const [startingId, setStartingId] = useState(null);
   useEffect(() => listQuizzes(user.uid, setQuizzes), [user.uid]);
+  const startLiveGame = async (quiz) => {
+    setStartError("");
+    setStartingId(quiz.id);
+    try {
+      setGame(await createGame(user.uid, quiz.id, makePin()));
+    } catch (err) {
+      console.error("Starting the live game failed.", err);
+      setStartError(err.message || "Could not start the game. Check your connection and try again.");
+    } finally {
+      setStartingId(null);
+    }
+  };
   if (editing)
     return (
       <QuizEditor
@@ -285,6 +299,7 @@ function HostDashboard({ user, go }) {
           <Plus size={17} /> Create quiz
         </button>
       </div>
+      {startError && <div className="error">{startError}</div>}
       {quizzes.length ? (
         <div className="quiz-list">
           {quizzes.map((quiz) => (
@@ -303,11 +318,10 @@ function HostDashboard({ user, go }) {
                 </button>
                 <button
                   className="primary small"
-                  onClick={async () =>
-                    setGame(await createGame(user.uid, quiz.id, makePin()))
-                  }
+                  disabled={startingId === quiz.id}
+                  onClick={() => startLiveGame(quiz)}
                 >
-                  Start live game <Radio size={16} />
+                  {startingId === quiz.id ? "Starting..." : "Start live game"} <Radio size={16} />
                 </button>
               </div>
             </article>
