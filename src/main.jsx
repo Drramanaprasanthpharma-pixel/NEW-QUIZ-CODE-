@@ -618,6 +618,8 @@ function HostGame({ gameId, onBack }) {
   const [quiz, setQuiz] = useState(null);
   const [players, setPlayers] = useState([]);
   const [answers, setAnswers] = useState([]);
+  const [actionError, setActionError] = useState("");
+  const [pending, setPending] = useState(false);
   useEffect(() => subscribeToGame(gameId, setGame), [gameId]);
   useEffect(() => subscribeToPlayers(gameId, setPlayers), [gameId]);
   useEffect(() => {
@@ -633,19 +635,46 @@ function HostGame({ gameId, onBack }) {
     const endsAt = timestampToMillis(game.questionEndsAt);
     if (!endsAt) return undefined;
     const remaining = Math.max(0, endsAt - Date.now());
-    const timer = setTimeout(() => showResults(gameId), remaining);
+    const timer = setTimeout(() => showResults(gameId).catch((err) => console.error("Auto-advance to results failed.", err)), remaining);
     return () => clearTimeout(timer);
   }, [game?.status, game?.questionEndsAt, gameId]);
   if (!game || !quiz)
     return <div className="loading">Loading live room...</div>;
   const question = quiz.questions[game.currentQuestion];
+  // Every host control below writes to Firestore. A write can fail silently
+  // (auth token hiccup, dropped connection, a denied rule) and previously
+  // nothing told the host that happened - the button just looked like it did
+  // nothing. runAction surfaces the real error and blocks double-clicks
+  // while a write is in flight.
+  const runAction = async (action) => {
+    if (pending) return;
+    setPending(true);
+    setActionError("");
+    try {
+      await action();
+    } catch (err) {
+      console.error("Host action failed.", err);
+      setActionError(
+        err.code === "permission-denied"
+          ? "That action was denied by the server. Try refreshing the host page."
+          : err.message || "That didn't go through. Check your connection and try again.",
+      );
+    } finally {
+      setPending(false);
+    }
+  };
   const begin = () =>
-    startQuestion(
-      gameId,
-      game.currentQuestion < 0 ? 0 : game.currentQuestion + 1,
-      quiz.questions[game.currentQuestion < 0 ? 0 : game.currentQuestion + 1]
-        ?.timer || 20,
+    runAction(() =>
+      startQuestion(
+        gameId,
+        game.currentQuestion < 0 ? 0 : game.currentQuestion + 1,
+        quiz.questions[game.currentQuestion < 0 ? 0 : game.currentQuestion + 1]
+          ?.timer || 20,
+      ),
     );
+  const reveal = () =>
+    runAction(() => revealAnswer(gameId, game.currentQuestion, question.correct));
+  const finish = () => runAction(() => finishGame(gameId));
   const isLast = game.currentQuestion >= quiz.questions.length - 1;
   const playerUrl = new URL(PLAYER_ROUTE, PRODUCTION_ORIGIN);
   playerUrl.searchParams.set("pin", game.gamePin);
@@ -719,31 +748,32 @@ function HostGame({ gameId, onBack }) {
           </div>
         </div>
       )}
+      {actionError && <div className="error">{actionError}</div>}
       <div className="host-controls">
         {game.status === "lobby" && (
           <button
             className="primary"
-            disabled={!players.length}
+            disabled={!players.length || pending}
             onClick={begin}
           >
-            Start question <ArrowRight size={18} />
+            {pending ? "Starting..." : "Start question"} <ArrowRight size={18} />
           </button>
         )}
         {game.status === "question" && (
-          <button className="primary" onClick={() => revealAnswer(gameId, game.currentQuestion, question.correct)}>
-            Reveal answer <Trophy size={17} />
+          <button className="primary" disabled={pending} onClick={reveal}>
+            {pending ? "Revealing..." : "Reveal answer"} <Trophy size={17} />
           </button>
         )}
         {game.status === "results" && (
           <>
             <Leaderboard players={players} />
             {game.revealedQuestionIndex !== game.currentQuestion ? (
-              <button className="primary" onClick={() => revealAnswer(gameId, game.currentQuestion, question.correct)}>
-                Reveal answer <Trophy size={17} />
+              <button className="primary" disabled={pending} onClick={reveal}>
+                {pending ? "Revealing..." : "Reveal answer"} <Trophy size={17} />
               </button>
             ) : (
-              <button className="primary" onClick={isLast ? () => finishGame(gameId) : begin}>
-                {isLast ? "Finish game" : "Next question"} <ArrowRight size={17} />
+              <button className="primary" disabled={pending} onClick={isLast ? finish : begin}>
+                {pending ? "Please wait..." : isLast ? "Finish game" : "Next question"} <ArrowRight size={17} />
               </button>
             )}
           </>
