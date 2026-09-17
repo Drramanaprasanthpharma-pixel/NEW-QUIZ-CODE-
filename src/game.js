@@ -168,8 +168,11 @@ export async function revealAnswer(gameId, questionIndex, correctOption) {
         ? Math.max(0, Math.min(endsMillis - startedMillis, endsMillis - answeredMillis))
         : 0;
       const totalTime = Math.max(1, durationMs);
-      const points = isCorrect && remainingTime > 0
-        ? Math.max(5, Math.ceil(20 * (remainingTime / totalTime)))
+      // Continuous linear scaling from remaining time - no floor, so a
+      // correct answer can score anywhere from ~0 (right at expiry) up to
+      // 20 (instant answer), rather than snapping to fixed tiers.
+      const points = isCorrect
+        ? Math.max(0, Math.min(20, Math.round(20 * (remainingTime / totalTime))))
         : 0;
       transaction.update(answerDoc.ref, { correct: isCorrect, points, resolvedAt: serverTimestamp() });
       const playerDoc = playersById.get(answer.playerId);
