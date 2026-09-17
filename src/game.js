@@ -115,18 +115,25 @@ export async function revealAnswer(gameId, questionIndex, correctOption) {
   const gameRef = doc(db, 'games', gameId);
   const answerQuery = query(collection(db, 'games', gameId, 'answers'), where('questionIndex', '==', questionIndex));
   const playerQuery = collection(db, 'games', gameId, 'players');
+  // The Firestore *client* SDK's transaction.get() only ever accepts a single
+  // DocumentReference - unlike the admin/server SDK, it cannot take a Query
+  // or CollectionReference (passing one throws an internal "Cannot read
+  // properties of undefined (reading 'path')" TypeError). So the answers and
+  // players fan-out has to be read with a plain getDocs() before the
+  // transaction opens; the transaction itself only ever gets/updates
+  // individual documents, which it does support.
+  const [answerSnap, playerSnap] = await Promise.all([
+    getDocs(answerQuery),
+    getDocs(playerQuery),
+  ]);
+  const playersById = new Map(playerSnap.docs.map((item) => [item.id, item]));
   await runTransaction(db, async (transaction) => {
-    const [gameSnap, answerSnap, playerSnap] = await Promise.all([
-      transaction.get(gameRef),
-      transaction.get(answerQuery),
-      transaction.get(playerQuery),
-    ]);
+    const gameSnap = await transaction.get(gameRef);
     if (!gameSnap.exists()) throw new Error('Game not found.');
     const game = gameSnap.data();
     if (game.revealedQuestionIndex === questionIndex) return;
     if (game.currentQuestion !== questionIndex) throw new Error('That question is no longer active.');
 
-    const playersById = new Map(playerSnap.docs.map((item) => [item.id, item]));
     const startedMillis = timestampToMillis(game.questionStartedAt);
     const endsMillis = timestampToMillis(game.questionEndsAt);
     let correctCount = 0;
