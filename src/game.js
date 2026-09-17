@@ -103,18 +103,16 @@ export async function submitAnswer(gameId, playerId, questionIndex, selectedOpti
     if (!playerSnap.exists()) {
       throw new Error('Your player session is no longer valid for this game. Refresh the page and rejoin.');
     }
-    const gameData = gameSnap.data();
-    const questionEndsAt = gameSnap.exists() ? timestampToMillis(gameData.questionEndsAt) : null;
-    // A small grace window absorbs the gap between the player's local 250ms
-    // countdown tick and the moment this transaction actually runs on the
-    // server - without it, a tap made right as the timer hits 0 can be
-    // rejected even though the player answered in time on their own screen.
-    const GRACE_MS = 2000;
-    if (!gameSnap.exists() || gameData.status !== 'question' || gameData.currentQuestion !== questionIndex) {
+    // Whether a question still accepts answers is decided purely by the
+    // host's authoritative status/currentQuestion fields - never by
+    // comparing a wall-clock deadline to this device's own clock. A
+    // player's phone clock can be off by minutes (no recent NTP sync, wrong
+    // timezone - common on event WiFi), which would otherwise reject every
+    // answer that player ever tries to submit, for the whole game. Once the
+    // host reveals or advances, status moves off 'question' and this same
+    // check blocks late submissions anyway, with no clock dependency.
+    if (!gameSnap.exists() || gameSnap.data().status !== 'question' || gameSnap.data().currentQuestion !== questionIndex) {
       throw new Error('This question is no longer active.');
-    }
-    if (!questionEndsAt || questionEndsAt + GRACE_MS <= Date.now()) {
-      throw new Error('Question time has expired.');
     }
     if (answerSnap.exists()) throw new Error('You have already answered this question.');
     transaction.set(answerRef, { playerId, questionIndex, selectedOption, answeredAt: serverTimestamp(), points: 0, correct: null });

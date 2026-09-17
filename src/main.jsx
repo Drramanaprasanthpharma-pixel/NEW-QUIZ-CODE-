@@ -1136,9 +1136,19 @@ function PlayerQuestion({ game, question, gameId, playerId, onInvalidSession }) 
       setSeconds(null);
       return undefined;
     }
-
+    // Never compare the host's absolute timestamp to this device's own
+    // clock - if a player's phone clock is off (no recent NTP sync, wrong
+    // timezone; common on event WiFi), that comparison can be wrong by
+    // minutes and lock the options out for the whole question, every
+    // question. Only the *duration* (a difference of two host-authored
+    // timestamps, so clock offset cancels out) is used, counted down from
+    // the moment THIS device received the question - off by at most normal
+    // network latency, not by however wrong this phone's clock is.
+    const durationMs = endsAt - startedAt;
+    const localStart = Date.now();
     const updateTimer = () => {
-      const nextSeconds = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      const elapsed = Date.now() - localStart;
+      const nextSeconds = Math.max(0, Math.ceil((durationMs - elapsed) / 1000));
       setSeconds(nextSeconds);
       return nextSeconds;
     };
