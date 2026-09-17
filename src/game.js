@@ -100,12 +100,23 @@ export async function submitAnswer(gameId, playerId, questionIndex, selectedOpti
       transaction.get(playerRef),
       transaction.get(answerRef),
     ]);
+    if (!playerSnap.exists()) {
+      throw new Error('Your player session is no longer valid for this game. Refresh the page and rejoin.');
+    }
     const gameData = gameSnap.data();
     const questionEndsAt = gameSnap.exists() ? timestampToMillis(gameData.questionEndsAt) : null;
-    if (!gameSnap.exists() || gameData.status !== 'question' || gameData.currentQuestion !== questionIndex || !questionEndsAt || questionEndsAt <= Date.now()) {
+    // A small grace window absorbs the gap between the player's local 250ms
+    // countdown tick and the moment this transaction actually runs on the
+    // server - without it, a tap made right as the timer hits 0 can be
+    // rejected even though the player answered in time on their own screen.
+    const GRACE_MS = 2000;
+    if (!gameSnap.exists() || gameData.status !== 'question' || gameData.currentQuestion !== questionIndex) {
+      throw new Error('This question is no longer active.');
+    }
+    if (!questionEndsAt || questionEndsAt + GRACE_MS <= Date.now()) {
       throw new Error('Question time has expired.');
     }
-    if (!playerSnap.exists() || answerSnap.exists()) throw new Error('You have already answered.');
+    if (answerSnap.exists()) throw new Error('You have already answered this question.');
     transaction.set(answerRef, { playerId, questionIndex, selectedOption, answeredAt: serverTimestamp(), points: 0, correct: null });
     transaction.update(playerRef, { currentAnswer: selectedOption, answeredAt: serverTimestamp() });
   });

@@ -619,15 +619,24 @@ function HostGame({ gameId, onBack }) {
   const [players, setPlayers] = useState([]);
   const [answers, setAnswers] = useState([]);
   const [actionError, setActionError] = useState("");
+  const [listenerError, setListenerError] = useState("");
   const [pending, setPending] = useState(false);
-  useEffect(() => subscribeToGame(gameId, setGame), [gameId]);
-  useEffect(() => subscribeToPlayers(gameId, setPlayers), [gameId]);
+  const onListenerError = (label) => (err) => {
+    console.error(`${label} listener failed.`, err);
+    setListenerError(
+      err.code === "permission-denied"
+        ? `Lost access to ${label} (permission denied).`
+        : `Lost connection while loading ${label}. Checking your network may help.`,
+    );
+  };
+  useEffect(() => subscribeToGame(gameId, (value) => { setListenerError(""); setGame(value); }, onListenerError("the game")), [gameId]);
+  useEffect(() => subscribeToPlayers(gameId, setPlayers, onListenerError("players")), [gameId]);
   useEffect(() => {
-    if (game?.quizId) return subscribeToQuiz(game.quizId, setQuiz);
+    if (game?.quizId) return subscribeToQuiz(game.quizId, setQuiz, onListenerError("the quiz"));
   }, [game?.quizId]);
   useEffect(() => {
     if (game && game.currentQuestion >= 0)
-      return subscribeToAnswers(gameId, game.currentQuestion, setAnswers);
+      return subscribeToAnswers(gameId, game.currentQuestion, setAnswers, onListenerError("answers"));
     setAnswers([]);
   }, [gameId, game?.currentQuestion]);
   useEffect(() => {
@@ -748,6 +757,7 @@ function HostGame({ gameId, onBack }) {
           </div>
         </div>
       )}
+      {listenerError && <div className="error">{listenerError}</div>}
       {actionError && <div className="error">{actionError}</div>}
       <div className="host-controls">
         {game.status === "lobby" && (
@@ -976,6 +986,7 @@ function PlayerApp({ go }) {
             question={question}
             gameId={gameId}
             playerId={playerId}
+            onInvalidSession={leaveStaleSession}
           />
         )}
         {game.status === "results" && (
@@ -1108,13 +1119,15 @@ function ScoringInfo() {
     </div>
   );
 }
-function PlayerQuestion({ game, question, gameId, playerId }) {
+function PlayerQuestion({ game, question, gameId, playerId, onInvalidSession }) {
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("idle");
+  const [feedback, setFeedback] = useState("");
   const [seconds, setSeconds] = useState(null);
   useEffect(() => {
     setSelected(null);
     setStatus("idle");
+    setFeedback("");
   }, [game.currentQuestion]);
   useEffect(() => {
     const startedAt = timestampToMillis(game.questionStartedAt);
@@ -1147,10 +1160,27 @@ function PlayerQuestion({ game, question, gameId, playerId }) {
       setStatus("submitted");
     } catch (err) {
       console.error("Answer submission failed.", err);
-      setStatus("error");
       setSelected(null);
+      if (/session is no longer valid/i.test(err.message || "")) {
+        setStatus("invalid-session");
+      } else {
+        setStatus("error");
+        setFeedback(err.message || "Could not submit your answer. Tap an option to try again.");
+      }
     }
   };
+  if (status === "invalid-session")
+    return (
+      <div className="play-question">
+        <p className="answer-feedback error">
+          Your session for this game isn't valid anymore (this can happen after a
+          long disconnect). Rejoin to keep playing.
+        </p>
+        <button className="primary full" onClick={onInvalidSession}>
+          Rejoin the game <ArrowRight size={18} />
+        </button>
+      </div>
+    );
   return (
     <div className="play-question">
       <div className="timer-bar">
@@ -1183,7 +1213,7 @@ function PlayerQuestion({ game, question, gameId, playerId }) {
         <p className="answer-feedback">Answer submitted &mdash; waiting for the host.</p>
       )}
       {status === "error" && (
-        <p className="answer-feedback error">Could not submit your answer. Tap an option to try again.</p>
+        <p className="answer-feedback error">{feedback}</p>
       )}
     </div>
   );
